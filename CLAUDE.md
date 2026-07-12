@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Companion — an AI chat assistant powered by Claude, with two independent entry points that share the same persona and conversation history:
 
 - `companion.py` — terminal chat app (Rich-based UI with a plain-text fallback if `rich` isn't installed)
-- `app.py` — Flask web app with streaming responses (SSE), served with `templates/index.html` and `static/` (vanilla JS, no build step)
+- `app.py` — Flask web app with streaming responses (SSE), served with `templates/index.html` and `static/` (vanilla JS, no build step); deployable to Vercel via `vercel.json` + `api/index.py`
 
 ## Commands
 
@@ -24,11 +24,12 @@ There are no tests, linters, or build tooling configured.
 
 ## Architecture
 
-Both apps are deliberately parallel implementations, not a shared module. They duplicate the same constants and helpers: `MODEL`, `MAX_HISTORY`, `SYSTEM_PROMPT`, `load_history()`, `save_history()`. **When changing any of these (e.g. the model or the persona), change both `companion.py` and `app.py` to keep them in sync.**
+Both apps are deliberately parallel implementations, not a shared module. They duplicate the same constants: `MODEL`, `MAX_HISTORY`, `SYSTEM_PROMPT`. **When changing any of these (e.g. the model or the persona), change both `companion.py` and `app.py` to keep them in sync.**
 
-### Shared conversation history
+The two apps store history differently:
 
-Both apps read/write `~/.companion_history.json` — a flat JSON list of `{"role", "content"}` messages in Anthropic Messages API format. History is truncated to the last `MAX_HISTORY * 2` entries (50 message pairs) on both load and save, so a CLI conversation resumes in the web UI and vice versa.
+- CLI: server-side file `~/.companion_history.json` — a flat JSON list of `{"role", "content"}` messages in Anthropic Messages API format, truncated to `MAX_HISTORY * 2` entries on load and save.
+- Web: client-side `localStorage` (key `companion_history` in `static/app.js`); the Flask server is stateless so it can run on serverless hosts.
 
 ### CLI (`companion.py`)
 
@@ -36,6 +37,9 @@ Single-file loop: read input → call `client.messages.create()` (non-streaming)
 
 ### Web app (`app.py` + `static/app.js`)
 
-- `POST /chat` streams the reply as server-sent events. Each event is a `data: {json}` line carrying one of `{"text": chunk}`, `{"error": msg}`, or `{"done": true}`. History is saved server-side only after the full reply finishes streaming.
-- `GET /history` and `POST /clear` round out the API; the frontend keeps no state of its own beyond the DOM.
-- `static/app.js` parses the SSE stream manually via `fetch` + `ReadableStream` (not `EventSource`, since the endpoint is a POST) and renders assistant messages with its own minimal markdown renderer (`renderMarkdown`: bold, inline code, fenced code blocks, lists). User content is always HTML-escaped.
+- `POST /chat` is the only API endpoint. The request body is `{"message": str, "history": [{"role", "content"}, ...]}`; the server validates history with `sanitize_history()` (role whitelist, alternation, length caps) before calling the API. The reply streams back as server-sent events — each a `data: {json}` line carrying one of `{"text": chunk}`, `{"error": msg}`, or `{"done": true}`.
+- `static/app.js` owns history: it loads from and saves to `localStorage`, appending the user/assistant pair only after a stream completes without error. It parses the SSE stream manually via `fetch` + `ReadableStream` (not `EventSource`, since the endpoint is a POST) and renders assistant messages with its own minimal markdown renderer (`renderMarkdown`: bold, inline code, fenced code blocks, lists). User content is always HTML-escaped.
+
+### Vercel deployment
+
+`vercel.json` rewrites every path to `api/index.py`, which imports the Flask app from the repo root as the WSGI entry point. The `ANTHROPIC_API_KEY` environment variable must be set in the Vercel project settings. Because the server is stateless, no other infrastructure is needed; if the platform buffers the response instead of streaming, the frontend still works — it renders whatever chunks arrive.
