@@ -24,12 +24,12 @@ There are no tests, linters, or build tooling configured.
 
 ## Architecture
 
-Both apps are deliberately parallel implementations, not a shared module. They duplicate the same constants: `MODEL`, `MAX_HISTORY`, `SYSTEM_PROMPT`. **When changing any of these (e.g. the model or the persona), change both `companion.py` and `app.py` to keep them in sync.**
+Both apps are deliberately parallel implementations, not a shared module. They duplicate the same constants — `MODEL` (currently `claude-sonnet-4-6`), `MAX_HISTORY`, `SYSTEM_PROMPT` — and the same `max_tokens=1024` in the API call. **When changing any of these (e.g. the model or the persona), change both `companion.py` and `app.py` to keep them in sync.**
 
 The two apps store history differently:
 
 - CLI: server-side file `~/.companion_history.json` — a flat JSON list of `{"role", "content"}` messages in Anthropic Messages API format, truncated to `MAX_HISTORY * 2` entries on load and save.
-- Web: client-side `localStorage` (key `companion_history` in `static/app.js`); the Flask server is stateless so it can run on serverless hosts.
+- Web: client-side `localStorage` (key `companion_history` in `static/app.js`, capped at `MAX_STORED_MESSAGES = 100`); the Flask server is stateless so it can run on serverless hosts.
 
 ### CLI (`companion.py`)
 
@@ -37,7 +37,7 @@ Single-file loop: read input → call `client.messages.create()` (non-streaming)
 
 ### Web app (`app.py` + `static/app.js`)
 
-- `POST /chat` is the only API endpoint. The request body is `{"message": str, "history": [{"role", "content"}, ...]}`; the server validates history with `sanitize_history()` (role whitelist, alternation, length caps) before calling the API. The reply streams back as server-sent events — each a `data: {json}` line carrying one of `{"text": chunk}`, `{"error": msg}`, or `{"done": true}`.
+- `POST /chat` is the only API endpoint. The request body is `{"message": str, "history": [{"role", "content"}, ...]}`; the server validates history with `sanitize_history()` before calling the API: role whitelist, enforced user/assistant alternation, per-message cap of `MAX_MESSAGE_CHARS` (8000), and it drops a leading assistant message or a trailing user message (the new user message is appended separately by `/chat`). The reply streams back as server-sent events — each a `data: {json}` line carrying one of `{"text": chunk}`, `{"error": msg}`, or `{"done": true}`.
 - `static/app.js` owns history: it loads from and saves to `localStorage`, appending the user/assistant pair only after a stream completes without error. It parses the SSE stream manually via `fetch` + `ReadableStream` (not `EventSource`, since the endpoint is a POST) and renders assistant messages with its own minimal markdown renderer (`renderMarkdown`: bold, inline code, fenced code blocks, lists). User content is always HTML-escaped.
 
 ### Vercel deployment
