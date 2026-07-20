@@ -22,6 +22,9 @@ Turns a topic (or your own narration) into a finished, captioned video:
    (built from the TTS word timings) are burned in or muxed as a soft track.
 5. **Output** — H.264 + AAC MP4, `yuv420p`, `+faststart` — ready to upload to
    YouTube et al., with a sidecar `.srt` next to it.
+6. **YouTube upload (optional)** — `--upload` pushes the finished MP4 to YouTube via
+   the Data API v3 (resumable, with retry), using the script's title/description and
+   attaching the sidecar `.srt` as an English caption track.
 
 ### Setup
 
@@ -50,6 +53,12 @@ python -m videopipeline --script examples/lighthouses.json --assets-dir ./my_med
 
 # Fully offline: espeak narration + local assets (or generated placeholders)
 python -m videopipeline --text narration.txt --tts espeak -o out.mp4
+
+# Render and upload to YouTube in one go (private by default)
+python -m videopipeline --topic "The history of lighthouses" -o out.mp4 --upload --privacy unlisted
+
+# Upload an already-rendered MP4
+python -m videopipeline.upload out.mp4 --title "My Video" --srt out.srt --privacy unlisted
 ```
 
 Useful flags: `--voice` (see `--list-voices`), `--captions burn|soft|none`,
@@ -75,6 +84,28 @@ Useful flags: `--voice` (see `--list-voices`), `--captions burn|soft|none`,
 ```
 
 `visual` is `"footage"` (stock video) or `"photo"` (still image, animated with Ken Burns).
+
+### YouTube upload setup
+
+Uploading needs the Google API client libraries and a one-time OAuth setup:
+
+```bash
+pip install google-api-python-client google-auth-oauthlib
+```
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a project,
+   enable the **YouTube Data API v3**, and create an **OAuth client ID** of type
+   *Desktop app* (configure the consent screen and add your account as a test user).
+2. Download the client secret JSON to `~/.videopipeline/client_secret.json`
+   (or point `--client-secrets` / `YT_CLIENT_SECRETS` at it).
+3. The first `--upload` prints a Google consent URL; open it, approve, and the token
+   is cached at `~/.videopipeline/token.json` (`--token-file` / `YT_TOKEN_FILE`) and
+   refreshed automatically afterwards.
+
+Uploads default to **private** so nothing goes public by accident — pass
+`--privacy unlisted` or `--privacy public` to change that. New/unverified API
+projects may cap daily uploads and can mark uploads private until the app is
+verified by Google.
 
 ## Companion
 
