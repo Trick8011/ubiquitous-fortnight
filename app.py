@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Web interface for Companion — streaming chat powered by Claude."""
+"""Web interface for Companion — streaming chat powered by Claude.
+
+Stateless server: conversation history lives in the browser (localStorage)
+and is sent with each request, so the app works on serverless hosts like
+Vercel where there is no persistent filesystem.
+"""
 
 import json
 import os
 import sys
-from pathlib import Path
 
 try:
     import anthropic
@@ -13,9 +17,9 @@ except ImportError:
     print("Missing dependencies. Run: pip install -r requirements.txt")
     sys.exit(1)
 
-HISTORY_FILE = Path.home() / ".companion_history.json"
 MODEL = "claude-sonnet-4-6"
-MAX_HISTORY = 50
+MAX_HISTORY = 50  # message pairs accepted per request
+MAX_MESSAGE_CHARS = 8000
 
 SYSTEM_PROMPT = """You are Companion, a warm, thoughtful, and engaging conversational AI.
 You are curious, supportive, and genuinely interested in the person you're talking with.
@@ -28,18 +32,26 @@ app = Flask(__name__)
 client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
 
 
-def load_history() -> list[dict]:
-    if HISTORY_FILE.exists():
-        try:
-            data = json.loads(HISTORY_FILE.read_text())
-            return data[-MAX_HISTORY * 2:]
-        except (json.JSONDecodeError, KeyError):
-            return []
-    return []
-
-
-def save_history(messages: list[dict]) -> None:
-    HISTORY_FILE.write_text(json.dumps(messages[-MAX_HISTORY * 2:], indent=2))
+def sanitize_history(raw) -> list[dict]:
+    """Validate client-supplied history into alternating Anthropic messages."""
+    if not isinstance(raw, list):
+        return []
+    messages = []
+    for item in raw[-MAX_HISTORY * 2:]:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        content = item.get("content")
+        if role not in ("user", "assistant") or not isinstance(content, str) or not content.strip():
+            continue
+        if messages and messages[-1]["role"] == role:
+            continue  # the API requires alternating roles
+        messages.append({"role": role, "content": content[:MAX_MESSAGE_CHARS]})
+    if messages and messages[0]["role"] != "user":
+        messages.pop(0)
+    if messages and messages[-1]["role"] == "user":
+        messages.pop()  # the new user message is appended by /chat
+    return messages
 
 
 @app.route("/")
@@ -47,29 +59,17 @@ def index():
     return render_template("index.html")
 
 
-@app.route("/history")
-def history():
-    return jsonify(load_history())
-
-
-@app.route("/clear", methods=["POST"])
-def clear():
-    save_history([])
-    return jsonify({"ok": True})
-
-
 @app.route("/chat", methods=["POST"])
 def chat():
-    data = request.get_json()
-    user_message = (data or {}).get("message", "").strip()
+    data = request.get_json(silent=True) or {}
+    user_message = (data.get("message") or "").strip()
     if not user_message:
         return jsonify({"error": "Empty message"}), 400
 
-    messages = load_history()
-    messages.append({"role": "user", "content": user_message})
+    messages = sanitize_history(data.get("history"))
+    messages.append({"role": "user", "content": user_message[:MAX_MESSAGE_CHARS]})
 
     def generate():
-        full_reply = ""
         try:
             with client.messages.stream(
                 model=MODEL,
@@ -78,14 +78,11 @@ def chat():
                 messages=messages,
             ) as stream:
                 for text in stream.text_stream:
-                    full_reply += text
                     yield f"data: {json.dumps({'text': text})}\n\n"
-        except anthropic.APIError as e:
+        except Exception as e:  # surface SDK/config errors as an SSE event, not a dead stream
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             return
 
-        messages.append({"role": "assistant", "content": full_reply})
-        save_history(messages)
         yield f"data: {json.dumps({'done': True})}\n\n"
 
     return Response(

@@ -57,6 +57,25 @@ const sendBtn = document.getElementById('sendBtn');
 const clearBtn = document.getElementById('clearBtn');
 let streaming = false;
 
+// Conversation history lives in this browser; the server is stateless.
+const STORAGE_KEY = 'companion_history';
+const MAX_STORED_MESSAGES = 100;
+
+function getHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveHistory(messages) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-MAX_STORED_MESSAGES)));
+  } catch (_) {}
+}
+
 function scrollToBottom() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
@@ -96,27 +115,27 @@ function setDisabled(val) {
   input.disabled = val;
 }
 
-async function loadHistory() {
-  const res = await fetch('/history');
-  const messages = await res.json();
-  for (const msg of messages) {
+function loadHistory() {
+  for (const msg of getHistory()) {
     addMessage(msg.role, msg.content);
   }
   scrollToBottom();
 }
 
 async function sendMessage(text) {
+  const history = getHistory();
   addMessage('user', text);
   const bubble = addMessage('assistant', '', true);
   setDisabled(true);
 
   let accumulated = '';
+  let gotError = false;
 
   try {
     const response = await fetch('/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ message: text, history }),
     });
 
     const reader = response.body.getReader();
@@ -136,6 +155,7 @@ async function sendMessage(text) {
         try {
           const data = JSON.parse(line.slice(6));
           if (data.error) {
+            gotError = true;
             bubble.innerHTML = `<em style="color:#f87171">Error: ${escapeHtml(data.error)}</em>`;
             return;
           }
@@ -151,8 +171,14 @@ async function sendMessage(text) {
       }
     }
   } catch (err) {
+    gotError = true;
     bubble.innerHTML = `<em style="color:#f87171">Connection error</em>`;
   } finally {
+    if (!gotError && accumulated) {
+      history.push({ role: 'user', content: text });
+      history.push({ role: 'assistant', content: accumulated });
+      saveHistory(history);
+    }
     setDisabled(false);
     input.focus();
     scrollToBottom();
@@ -182,9 +208,9 @@ document.getElementById('chatForm').addEventListener('submit', (e) => {
   sendMessage(text);
 });
 
-clearBtn.addEventListener('click', async () => {
+clearBtn.addEventListener('click', () => {
   if (!confirm('Clear conversation history?')) return;
-  await fetch('/clear', { method: 'POST' });
+  localStorage.removeItem(STORAGE_KEY);
   messagesEl.innerHTML = '';
 });
 
