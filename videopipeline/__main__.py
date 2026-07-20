@@ -15,7 +15,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import script_gen, tts
+from . import script_gen, tts, upload
 from .models import Script
 from .pipeline import PipelineOptions, run_pipeline
 
@@ -59,6 +59,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--work-dir", type=Path, help="keep intermediate files here instead of a temp dir")
     parser.add_argument("-q", "--quiet", action="store_true")
 
+    yt = parser.add_argument_group("YouTube upload (optional)")
+    yt.add_argument("--upload", action="store_true",
+                    help="upload the finished MP4 to YouTube (needs OAuth setup, see README)")
+    yt.add_argument("--privacy", choices=["private", "unlisted", "public"], default="private",
+                    help="privacy of the uploaded video")
+    yt.add_argument("--yt-tags", default="", help="comma-separated tags for the uploaded video")
+    yt.add_argument("--yt-category", default=upload.DEFAULT_CATEGORY, help="YouTube category id")
+    yt.add_argument("--client-secrets", type=Path, help="OAuth client_secret.json path")
+    yt.add_argument("--token-file", type=Path, help="cached OAuth token path")
+
     args = parser.parse_args(argv)
 
     if args.list_voices:
@@ -93,7 +103,22 @@ def main(argv: list[str] | None = None) -> int:
             work_dir=args.work_dir,
             verbose=not args.quiet,
         )
-        run_pipeline(script, options)
+        output = run_pipeline(script, options)
+
+        if args.upload:
+            srt = output.with_suffix(".srt")
+            url = upload.upload_video(output, upload.UploadOptions(
+                title=script.title,
+                description=script.description,
+                tags=[t.strip() for t in args.yt_tags.split(",") if t.strip()],
+                category=args.yt_category,
+                privacy=args.privacy,
+                captions_srt=srt if srt.exists() else None,
+                client_secrets=args.client_secrets,
+                token_file=args.token_file,
+                verbose=not args.quiet,
+            ))
+            print(url)
         return 0
     except (RuntimeError, ValueError, OSError) as e:
         print(f"error: {e}", file=sys.stderr)
