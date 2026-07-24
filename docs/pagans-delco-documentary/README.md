@@ -16,8 +16,12 @@ present-day presence in Delaware County, Pennsylvania.
 
 ## Finished video
 
-A rendered cut (the six cards + AI narration, Ken Burns motion) is assembled in Descript;
-see the PR description / chat for the share and download links.
+Rendered, narrated, ~3:30 cut (six cards + AI voiceover, Ken Burns motion, piano bed):
+
+- Watch: https://share.descript.com/view/iKiQ63t9h5k
+- Source project (Descript): https://web.descript.com/45945ca2-493c-4fcd-88ea-a3691772bd5e
+- `river-towns.mp4` is attached to the PR/chat as a downloadable file (the signed
+  Descript export URL expires 24h after render).
 
 ## Editorial note
 
