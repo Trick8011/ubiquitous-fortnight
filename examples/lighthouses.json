@@ -1,0 +1,31 @@
+{
+  "title": "Keepers of the Coast",
+  "description": "A one-minute look at how lighthouses guided sailors home for centuries.",
+  "scenes": [
+    {
+      "narration": "For thousands of years, sailors trusted their lives to a single point of light on the horizon.",
+      "keywords": ["ocean waves", "coastline", "night sea"],
+      "visual": "footage"
+    },
+    {
+      "narration": "The great Pharos of Alexandria, built in the third century BC, burned wood fires visible thirty miles out to sea.",
+      "keywords": ["lighthouse", "ancient ruins"],
+      "visual": "photo"
+    },
+    {
+      "narration": "By the nineteenth century, spinning Fresnel lenses turned a simple oil lamp into a beam that could pierce fog and storm.",
+      "keywords": ["lighthouse lens", "storm"],
+      "visual": "photo"
+    },
+    {
+      "narration": "Keepers lived in isolation for months, climbing the tower every few hours to keep the light alive.",
+      "keywords": ["lighthouse keeper", "spiral staircase"],
+      "visual": "photo"
+    },
+    {
+      "narration": "Today, satellites and automation have replaced the keepers. But the towers still stand, and their lights still turn.",
+      "keywords": ["lighthouse sunset", "ocean"],
+      "visual": "footage"
+    }
+  ]
+}
